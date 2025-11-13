@@ -5,10 +5,11 @@ This repository bootstraps the term project requirements for a socket-based chat
 ### Features implemented now
 - Event-driven multi-client server built with Node's `net` module while sharing synchronized in-memory state.
 - Unique nickname enforcement before a client can interact with others.
-- `/list users`, `/list groups`, `/msg <user> ...`, `/group create|join|leave|send`, `/history [count]`, `/photo <@user|#group> <mime> <name> <base64> [caption]`, `/quit`, and `/help` commands.
+- `/list users`, `/list groups`, `/msg <user> ...`, `/group create|join|leave|send`, `/history [count]`, `/photo <@user|#group> <mime> <name> <base64> [caption]`, `/delete <message_id>`, `/quit`, and `/help` commands.
 - Private direct messaging plus opt-in group messaging that only delivers to members of the group.
 - Server-side chat history persisted to `chat-history.jsonl`, retrievable via `/history` (default 20 entries, max 100) so late joiners can review recent context.
 - Photo attachments (<= 3 MB) with inline rendering in the React UI and automatic saving to `received-photos/` for the CLI client.
+- Sender-controlled message deletion with audit trails and real-time updates for every participant.
 
 ### Running the TypeScript server
 1. Install dependencies (Node.js 18+ recommended):
@@ -40,6 +41,7 @@ This repository bootstraps the term project requirements for a socket-based chat
 - Use `/rooms` to list open rooms + unread counts, and `/system` to jump back to server/system output. Messages for inactive rooms stay in their own windows until you switch.
 - Standard server commands still work anywhere: `/help`, `/list users`, `/list groups`, `/msg <user> ...`, `/group create|join|leave|send ...`, `/quit`, etc. The client automatically redraws the active room whenever new messages arrive there.
 - To share an image, open the React chat room you want, choose a file in the **Send Photo** row (files up to 3 MB), optionally add a caption, and click **Send Photo**. CLI users can run the raw `/photo` command if they Base64-encode the payload; incoming photos are saved under `received-photos/` with a descriptive filename.
+- To delete a message you sent, grab its numeric id (shown inline in the CLI or via the hoverable Delete buttons in the React chat). Click **Delete** in the web UI or run `/delete <message_id>` from any client; everyone in that room sees the content disappear and receives a deletion notice.
 - Examples:
   - Start a private chat: `/chat @alice`, then type `Hello there!`
   - List who is online: `/list users`

@@ -30,6 +30,17 @@ interface PhotoPayload {
     caption?: string;
     size?: number;
     timestamp?: number;
+    id?: number;
+    deleted?: boolean;
+}
+
+interface DeletePayload {
+    id: number;
+    type: "private" | "group";
+    sender?: string;
+    target?: string;
+    group?: string;
+    by?: string;
 }
 
 interface CliArgs {
@@ -169,33 +180,40 @@ class ChatClient {
             return;
         }
 
-        const privateIncoming = line.match(/^\[PM\]\s+([^:]+):\s*(.*)$/);
+        if (line.startsWith("DELETE ")) {
+            this.processDeleteLine(line.slice(7));
+            return;
+        }
+
+        const privateIncoming = line.match(/^\[PM(?:#(\d+))?\]\s+([^:]+):\s*(.*)$/);
         if (privateIncoming) {
-            const [, sender, body] = privateIncoming;
+            const [, idRaw, sender, body] = privateIncoming;
             const room = this.ensureRoom("private", sender);
-            this.appendMessage(room, `${sender}: ${body}`);
+            this.appendMessage(room, `${sender}: ${body} ${idRaw ? `(id:${idRaw})` : ""}`.trim());
             return;
         }
 
-        const privateOutgoing = line.match(/^\[PM -> ([^\]]+)\]\s*(.*)$/);
+        const privateOutgoing = line.match(/^\[PM -> ([^\]\s]+)(?:\s+#(\d+))?\]\s*(.*)$/);
         if (privateOutgoing) {
-            const [, target, body] = privateOutgoing;
+            const [, target, idRaw, body] = privateOutgoing;
             const room = this.ensureRoom("private", target);
-            this.appendMessage(room, `(you): ${body}`);
+            const suffix = idRaw ? ` (id:${idRaw})` : "";
+            this.appendMessage(room, `(you): ${body}${suffix}`);
             return;
         }
 
-        const groupMatch = line.match(/^\[Group:([^\]]+)\]\s+(.*)$/);
+        const groupMatch = line.match(/^\[Group:([^\]#]+)(?:\s*#(\d+))?\]\s+(.*)$/);
         if (groupMatch) {
-            const [, groupName, rest] = groupMatch;
+            const [, groupName, idRaw, rest] = groupMatch;
             const room = this.ensureRoom("group", groupName);
             const colonIndex = rest.indexOf(":");
             if (colonIndex === -1) {
-                this.appendMessage(room, rest.trim());
+                this.appendMessage(room, `${rest.trim()}${idRaw ? ` (id:${idRaw})` : ""}`);
             } else {
                 const speaker = rest.slice(0, colonIndex).trim();
                 const body = rest.slice(colonIndex + 1).trim();
-                this.appendMessage(room, `${speaker}: ${body}`);
+                const suffix = idRaw ? ` (id:${idRaw})` : "";
+                this.appendMessage(room, `${speaker}: ${body}${suffix}`);
             }
             return;
         }
@@ -339,6 +357,16 @@ class ChatClient {
         }
     }
 
+    private processDeleteLine(raw: string): void {
+        try {
+            const payload = JSON.parse(raw) as DeletePayload;
+            this.handleDeletePayload(payload);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            this.appendSystemMessage(`[warn] Failed to parse delete event: ${message}`);
+        }
+    }
+
     private handlePhotoPayload(payload: PhotoPayload): void {
         if (!payload || !payload.mime || !payload.data) {
             this.appendSystemMessage("[warn] Photo payload missing data.");
@@ -376,6 +404,29 @@ class ChatClient {
         const savedPath = this.savePhotoToDisk(payload);
         const info = savedPath ? `${summary} saved to ${savedPath}` : `${summary} (save failed)`;
         this.appendMessage(room, info);
+    }
+
+    private handleDeletePayload(payload: DeletePayload): void {
+        if (!payload || !payload.id) {
+            this.appendSystemMessage("[warn] Delete payload missing id.");
+            return;
+        }
+        const roomType: RoomType = payload.type === "group" ? "group" : "private";
+        let identifier: string | undefined;
+        if (roomType === "group") {
+            identifier = payload.group;
+        } else if (payload.sender === this.userNickname) {
+            identifier = payload.target ?? payload.sender;
+        } else if (payload.target === this.userNickname) {
+            identifier = payload.sender;
+        } else {
+            identifier = payload.sender ?? payload.target;
+        }
+        const room = identifier ? this.ensureRoom(roomType, identifier) : this.getSystemRoom();
+        const message =
+            `[info] Message #${payload.id} deleted by ${payload.by ?? "sender"} ` +
+            `${roomType === "group" ? `(group ${payload.group ?? "unknown"})` : ""}`.trim();
+        this.appendMessage(room, message);
     }
 
     private savePhotoToDisk(payload: PhotoPayload): string | undefined {

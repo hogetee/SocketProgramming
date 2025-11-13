@@ -342,6 +342,15 @@ export default function App() {
     resetPhotoSelection();
   }
 
+  function requestDeleteMessage(messageId) {
+    if (!messageId) {
+      return;
+    }
+    if (!sendRaw(`/delete ${messageId}`)) {
+      appendMessage("system", "system", "Unable to send delete command (connection not ready).");
+    }
+  }
+
   function handleDirectOpen(e) {
     e.preventDefault();
     const value = directTarget.trim().replace(/^@/, "");
@@ -509,7 +518,64 @@ export default function App() {
       caption: captionText,
       timestamp: payload.timestamp || Date.now(),
       photo: true,
+      id: payload.id,
+      deleted: payload.deleted,
     });
+  }
+
+  function handleDeleteEvent(payload) {
+    if (!payload || typeof payload !== "object") {
+      appendMessage("system", "system", "[warn] Received malformed delete payload.");
+      return;
+    }
+    const messageId = Number(payload.id);
+    if (!messageId) {
+      appendMessage("system", "system", "[warn] Delete payload missing id.");
+      return;
+    }
+    const roomType = payload.type === "group" ? "group" : "private";
+    let identifier;
+    if (roomType === "group") {
+      identifier = payload.group;
+    } else if (payload.sender === nickname) {
+      identifier = payload.target || payload.sender;
+    } else if (payload.target === nickname) {
+      identifier = payload.sender;
+    } else {
+      identifier = payload.sender || payload.target;
+    }
+    if (!identifier) {
+      appendMessage("system", "system", `[warn] Delete event for #${messageId} missing room info.`);
+      return;
+    }
+    const descriptor = roomDescriptor(roomType, identifier);
+    ensureRoom(roomType, identifier);
+    let updated = false;
+    setRooms((prev) => {
+      const room = prev[descriptor.id];
+      if (!room) {
+        return prev;
+      }
+      let changed = false;
+      const nextMessages = room.messages.map((msg) => {
+        if (msg?.id === messageId && !msg.deleted) {
+          changed = true;
+          return { ...msg, text: "[deleted]", media: undefined, deleted: true };
+        }
+        return msg;
+      });
+      if (!changed) {
+        return prev;
+      }
+      updated = true;
+      return {
+        ...prev,
+        [descriptor.id]: { ...room, messages: nextMessages },
+      };
+    });
+    if (!updated) {
+      appendMessage(roomType, identifier, `[info] Message #${messageId} deleted by ${payload.by || "sender"}.`);
+    }
   }
 
   function routeServerLine(line) {
@@ -525,32 +591,51 @@ export default function App() {
       }
       return;
     }
+    if (line.startsWith("DELETE ")) {
+      try {
+        const payload = JSON.parse(line.slice(7));
+        handleDeleteEvent(payload);
+      } catch {
+        appendMessage("system", "system", "[warn] Failed to parse delete event.");
+      }
+      return;
+    }
     handleUserMetadata(line);
     handleGroupMetadata(line);
 
-    const privateIncoming = line.match(/^\[PM\]\s+([^:]+):\s*(.*)$/);
+    const privateIncoming = line.match(/^\[PM(?:#(\d+))?\]\s+([^:]+):\s*(.*)$/);
     if (privateIncoming) {
-      const [, sender, body] = privateIncoming;
-      appendMessage("private", sender, `${sender}: ${body}`);
+      const [, idRaw, sender, body] = privateIncoming;
+      appendMessage("private", sender, `${sender}: ${body}`, {
+        id: idRaw ? Number(idRaw) : undefined,
+        sender,
+      });
       return;
     }
-    const privateOutgoing = line.match(/^\[PM -> ([^\]]+)\]\s*(.*)$/);
+    const privateOutgoing = line.match(/^\[PM -> ([^\]\s]+)(?:\s+#(\d+))?\]\s*(.*)$/);
     if (privateOutgoing) {
-      const [, target, body] = privateOutgoing;
-      appendMessage("private", target, `(you): ${body}`);
+      const [, target, idRaw, body] = privateOutgoing;
+      appendMessage("private", target, `(you): ${body}`, {
+        id: idRaw ? Number(idRaw) : undefined,
+        sender: nickname,
+      });
       return;
     }
-    const groupMatch = line.match(/^\[Group:([^\]]+)\]\s+(.*)$/);
+    const groupMatch = line.match(/^\[Group:([^\]#]+)(?:\s*#(\d+))?\]\s+(.*)$/);
     if (groupMatch) {
-      const [, groupName, rest] = groupMatch;
+      const [, groupName, idRaw, rest] = groupMatch;
       const colonIndex = rest.indexOf(":");
-      if (colonIndex === -1) {
-        appendMessage("group", groupName, rest.trim());
-      } else {
-        const speaker = rest.slice(0, colonIndex).trim();
-        const body = rest.slice(colonIndex + 1).trim();
-        appendMessage("group", groupName, `${speaker}: ${body}`);
+      let speaker;
+      if (rest.startsWith("(you):")) {
+        speaker = nickname;
+      } else if (colonIndex !== -1) {
+        speaker = rest.slice(0, colonIndex).trim();
       }
+      const displayText = rest.trim();
+      appendMessage("group", groupName, displayText, {
+        id: idRaw ? Number(idRaw) : undefined,
+        sender: speaker,
+      });
       return;
     }
 
@@ -773,6 +858,9 @@ export default function App() {
               const message = typeof entry === "string" ? { text: entry } : entry;
               const label = formatTimestamp(message.timestamp);
               const isPhoto = message.media?.kind === "photo";
+              const isDeleted = message.deleted;
+              const showPhoto = isPhoto && !isDeleted;
+              const canDelete = !isDeleted && message.id && message.sender === nickname;
               return (
                 <div
                   key={`${activeRoom?.id}-${idx}`}
@@ -780,8 +868,19 @@ export default function App() {
                 >
                   {label && <span className="timestamp">{label}</span>}
                   <div className="message-text">
-                    <div>{message.text}</div>
-                    {isPhoto && (
+                    <div className="message-header">
+                      <span>{isDeleted ? "[deleted]" : message.text}</span>
+                      {canDelete && (
+                        <button
+                          type="button"
+                          className="delete-btn"
+                          onClick={() => requestDeleteMessage(message.id)}
+                        >
+                          Delete
+                        </button>
+                      )}
+                    </div>
+                    {showPhoto && (
                       <div className="photo-bubble">
                         <img
                           src={`data:${message.media.mime};base64,${message.media.data}`}

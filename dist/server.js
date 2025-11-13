@@ -162,6 +162,9 @@ class ChatServer {
             case "/history":
                 this.handleHistoryCommand(context, tokens);
                 break;
+            case "/delete":
+                this.handleDeleteCommand(context, tokens);
+                break;
             case "/photo":
                 this.handlePhotoCommand(context, tokens);
                 break;
@@ -220,6 +223,7 @@ class ChatServer {
             "  /group send <name> <message>      Send a message to a group you're in",
             "  /history [count]                  View recent chat history (default 20, max 100)",
             "  /photo <@user|#group> <mime> <name> <base64> [caption]  Send an image (<= 3MB)",
+            "  /delete <message_id>              Delete one of your recent messages",
             "  /quit                             Disconnect from the server",
         ];
         this.sendLine(socket, helpLines.join("\n"));
@@ -251,9 +255,7 @@ class ChatServer {
             this.sendLine(origin, `${target} is not online.`);
             return;
         }
-        this.sendLine(recipient.socket, `[PM] ${sender}: ${message}`);
-        this.sendLine(origin, `[PM -> ${target}] ${message}`);
-        this.history.append({
+        const entry = this.history.add({
             type: "private",
             timestamp: Date.now(),
             sender,
@@ -261,6 +263,8 @@ class ChatServer {
             message,
             audience: [sender, target],
         });
+        this.sendLine(recipient.socket, this.renderPrivateIncoming(entry));
+        this.sendLine(origin, this.renderPrivateOutgoing(entry));
     }
     groupCreate(sender, groupName, origin) {
         if (this.groups.has(groupName)) {
@@ -298,17 +302,7 @@ class ChatServer {
             return;
         }
         const audience = [...members];
-        for (const member of members) {
-            if (member === sender) {
-                continue;
-            }
-            const recipient = this.clients.get(member);
-            if (recipient) {
-                this.sendLine(recipient.socket, `[Group:${groupName}] ${sender}: ${message}`);
-            }
-        }
-        this.sendLine(origin, `[Group:${groupName}] (you): ${message}`);
-        this.history.append({
+        const entry = this.history.add({
             type: "group",
             timestamp: Date.now(),
             sender,
@@ -316,6 +310,16 @@ class ChatServer {
             message,
             audience,
         });
+        for (const member of members) {
+            if (member === sender) {
+                this.sendLine(origin, this.renderGroupLine(entry, true));
+                continue;
+            }
+            const recipient = this.clients.get(member);
+            if (recipient) {
+                this.sendLine(recipient.socket, this.renderGroupLine(entry, false));
+            }
+        }
     }
     handlePhotoCommand(context, tokens) {
         if (!context.name) {
@@ -377,21 +381,9 @@ class ChatServer {
             origin?.socket && this.sendLine(origin.socket, `${target} is not online.`);
             return;
         }
-        const payload = this.buildPhotoPayload("private", sender, {
-            target,
-            mime,
-            name,
-            data,
-            caption,
-            size,
-        });
-        this.dispatchPhotoPayload(recipient.socket, payload);
-        if (origin) {
-            this.dispatchPhotoPayload(origin.socket, payload);
-        }
-        this.history.append({
+        const entry = this.history.add({
             type: "private",
-            timestamp: payload.timestamp,
+            timestamp: Date.now(),
             sender,
             target,
             message: caption || "[photo]",
@@ -404,6 +396,18 @@ class ChatServer {
                 size,
             },
         });
+        const payload = this.buildPhotoPayload(entry, {
+            target,
+            mime,
+            name,
+            data,
+            caption,
+            size,
+        });
+        this.dispatchPhotoPayload(recipient.socket, payload);
+        if (origin) {
+            this.dispatchPhotoPayload(origin.socket, payload);
+        }
     }
     groupSendPhoto(sender, groupName, mime, name, data, size, caption) {
         const members = this.groups.get(groupName);
@@ -413,7 +417,23 @@ class ChatServer {
                 this.sendLine(origin.socket, "You must join the group before sending messages.");
             return;
         }
-        const payload = this.buildPhotoPayload("group", sender, {
+        const audience = [...members];
+        const entry = this.history.add({
+            type: "group",
+            timestamp: Date.now(),
+            sender,
+            group: groupName,
+            message: caption || "[photo]",
+            audience,
+            media: {
+                kind: "photo",
+                mime,
+                name,
+                data,
+                size,
+            },
+        });
+        const payload = this.buildPhotoPayload(entry, {
             group: groupName,
             mime,
             name,
@@ -427,27 +447,16 @@ class ChatServer {
                 this.dispatchPhotoPayload(context.socket, payload);
             }
         }
-        this.history.append({
-            type: "group",
-            timestamp: payload.timestamp,
-            sender,
-            group: groupName,
-            message: caption || "[photo]",
-            audience: [...members],
-            media: {
-                kind: "photo",
-                mime,
-                name,
-                data,
-                size,
-            },
-        });
     }
-    buildPhotoPayload(kind, sender, options) {
+    buildPhotoPayload(entry, options) {
         return {
-            kind,
-            sender,
-            timestamp: Date.now(),
+            kind: entry.type === "group" ? "group" : "private",
+            sender: entry.sender ?? "unknown",
+            target: options.target ?? entry.target,
+            group: options.group ?? entry.group,
+            timestamp: entry.timestamp,
+            id: entry.id,
+            deleted: entry.deleted,
             ...options,
         };
     }
@@ -455,14 +464,14 @@ class ChatServer {
         this.sendLine(socket, `PHOTO ${JSON.stringify(payload)}`);
     }
     broadcastSystem(message) {
-        for (const context of this.clients.values()) {
-            this.sendLine(context.socket, `[System] ${message}`);
-        }
-        this.history.append({
+        this.history.add({
             type: "system",
             timestamp: Date.now(),
             message,
         });
+        for (const context of this.clients.values()) {
+            this.sendLine(context.socket, `[System] ${message}`);
+        }
     }
     cleanupClient(context) {
         if (context.closed) {
@@ -501,6 +510,78 @@ class ChatServer {
         const lines = entries.map((entry) => this.formatHistoryEntry(entry, context.name));
         this.sendLine(context.socket, lines.join("\n"));
     }
+    handleDeleteCommand(context, tokens) {
+        if (!context.name) {
+            return;
+        }
+        if (tokens.length < 2) {
+            this.sendLine(context.socket, "Usage: /delete <message_id>");
+            return;
+        }
+        const messageId = Number(tokens[1]);
+        if (Number.isNaN(messageId) || messageId <= 0) {
+            this.sendLine(context.socket, "Message id must be a positive number.");
+            return;
+        }
+        const entry = this.history.getById(messageId);
+        if (!entry) {
+            this.sendLine(context.socket, `Message #${messageId} not found.`);
+            return;
+        }
+        if (entry.type === "system") {
+            this.sendLine(context.socket, "System messages cannot be deleted.");
+            return;
+        }
+        if (entry.sender !== context.name) {
+            this.sendLine(context.socket, "You can only delete messages you sent.");
+            return;
+        }
+        if (entry.deleted) {
+            this.sendLine(context.socket, "Message already deleted.");
+            return;
+        }
+        const updated = this.history.markDeleted(messageId);
+        if (!updated) {
+            this.sendLine(context.socket, "Unable to delete message (already removed?).");
+            return;
+        }
+        this.broadcastDeletion(updated, context.name);
+        this.sendLine(context.socket, `Deleted message #${messageId}.`);
+    }
+    broadcastDeletion(entry, by) {
+        const payload = this.buildDeletePayload(entry, by);
+        if (!payload) {
+            return;
+        }
+        const recipients = new Set(entry.audience ?? []);
+        if (entry.type === "group" && entry.group) {
+            const members = this.groups.get(entry.group);
+            if (members) {
+                for (const member of members) {
+                    recipients.add(member);
+                }
+            }
+        }
+        for (const name of recipients) {
+            const targetContext = this.clients.get(name);
+            if (targetContext) {
+                this.sendLine(targetContext.socket, `DELETE ${JSON.stringify(payload)}`);
+            }
+        }
+    }
+    buildDeletePayload(entry, by) {
+        if (entry.type !== "private" && entry.type !== "group") {
+            return undefined;
+        }
+        return {
+            id: entry.id,
+            type: entry.type,
+            sender: entry.sender ?? "unknown",
+            target: entry.target,
+            group: entry.group,
+            by,
+        };
+    }
     historyEntryVisible(entry, requester) {
         if (entry.type === "system") {
             return true;
@@ -517,7 +598,7 @@ class ChatServer {
         return false;
     }
     formatHistoryEntry(entry, requester) {
-        if (entry.media?.kind === "photo") {
+        if (entry.media?.kind === "photo" && !entry.deleted) {
             const payload = {
                 kind: entry.group ? "group" : "private",
                 sender: entry.sender ?? "unknown",
@@ -529,17 +610,25 @@ class ChatServer {
                 caption: entry.message && entry.message !== "[photo]" ? entry.message : undefined,
                 size: entry.media.size,
                 timestamp: entry.timestamp,
+                id: entry.id,
+                deleted: entry.deleted,
             };
             return `PHOTO ${JSON.stringify(payload)}`;
         }
         const timestamp = this.formatTimestamp(entry.timestamp);
+        const body = entry.deleted ? "[deleted]" : entry.message;
+        if (entry.media?.kind === "photo" && entry.deleted) {
+            return `[${timestamp}] [Photo#${entry.id}] ${body}`;
+        }
         switch (entry.type) {
             case "private": {
-                const direction = entry.sender === requester ? `-> ${entry.target}` : `<- ${entry.sender}`;
-                return `[${timestamp}] [PM ${direction}] ${entry.message}`;
+                if (entry.sender === requester) {
+                    return `[${timestamp}] [PM -> ${entry.target ?? "unknown"} #${entry.id}] ${body}`;
+                }
+                return `[${timestamp}] [PM#${entry.id}] ${entry.sender ?? "unknown"}: ${body}`;
             }
             case "group":
-                return `[${timestamp}] [Group:${entry.group}] ${entry.sender ?? "unknown"}: ${entry.message}`;
+                return `[${timestamp}] [Group:${entry.group ?? "unknown"} #${entry.id}] ${entry.sender ?? "unknown"}: ${body}`;
             case "system":
             default:
                 return `[${timestamp}] [System] ${entry.message}`;
@@ -557,6 +646,22 @@ class ChatServer {
         if (socket.writable) {
             socket.write(`${message}\n`);
         }
+    }
+    entryBody(entry) {
+        return entry.deleted ? "[deleted]" : entry.message;
+    }
+    renderPrivateIncoming(entry) {
+        return `[PM#${entry.id}] ${entry.sender ?? "unknown"}: ${this.entryBody(entry)}`;
+    }
+    renderPrivateOutgoing(entry) {
+        return `[PM -> ${entry.target ?? "unknown"} #${entry.id}] ${this.entryBody(entry)}`;
+    }
+    renderGroupLine(entry, isSender) {
+        const prefix = `[Group:${entry.group ?? "unknown"} #${entry.id}]`;
+        if (isSender) {
+            return `${prefix} (you): ${this.entryBody(entry)}`;
+        }
+        return `${prefix} ${entry.sender ?? "unknown"}: ${this.entryBody(entry)}`;
     }
 }
 function parseArgs(argv) {
