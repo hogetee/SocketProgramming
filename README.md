@@ -34,15 +34,14 @@ This repository bootstraps the term project requirements for a socket-based chat
 
 ### Using the client
 - Enter a nickname when prompted. It must be unique across all active clients.
-- Use `/help` anytime to see the supported commands.
-- Private chat: `/msg alice Hello there!`
-- List who is online: `/list users`
-- Create a group named `lab`: `/group create lab`
-- Join an existing group: `/group join lab`
-- Send to a group you joined: `/group send lab Are we meeting at 9?`
-- Leave a group: `/group leave lab`
-
-The CLI client redraws the prompt automatically so you can keep typing commands while new messages stream in.
+- The terminal now keeps a **separate chat room** (window + input box) for every private peer (`@alice`) or group (`#lab`). Type `/chat @nickname` or `/chat #group` to focus a room and then type plain text to send within that room.
+- Use `/rooms` to list open rooms + unread counts, and `/system` to jump back to server/system output. Messages for inactive rooms stay in their own windows until you switch.
+- Standard server commands still work anywhere: `/help`, `/list users`, `/list groups`, `/msg <user> ...`, `/group create|join|leave|send ...`, `/quit`, etc. The client automatically redraws the active room whenever new messages arrive there.
+- Examples:
+  - Start a private chat: `/chat @alice`, then type `Hello there!`
+  - List who is online: `/list users`
+  - Create a group named `lab`: `/group create lab`, open it via `/chat #lab`, then type to talk to the group
+  - Leave a group: `/group leave lab`
 
 ### Next steps / ideas
 - Persist chat history to disk or a database instead of keeping it in-memory.
