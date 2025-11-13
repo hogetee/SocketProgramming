@@ -4,9 +4,12 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const node_net_1 = __importDefault(require("node:net"));
+const node_path_1 = __importDefault(require("node:path"));
 const node_process_1 = __importDefault(require("node:process"));
+const history_1 = require("./history");
 const DEFAULT_HOST = "0.0.0.0";
 const DEFAULT_PORT = 5050;
+const HISTORY_FILE = node_path_1.default.resolve(node_process_1.default.cwd(), "chat-history.jsonl");
 class ChatServer {
     constructor(host, port) {
         this.clients = new Map();
@@ -16,6 +19,7 @@ class ChatServer {
         this.host = host;
         this.port = port;
         this.server = node_net_1.default.createServer((socket) => this.handleConnection(socket));
+        this.history = new history_1.HistoryStore(HISTORY_FILE, 1000);
     }
     start() {
         this.server.listen(this.port, this.host, () => {
@@ -33,9 +37,13 @@ class ChatServer {
             for (const context of this.contexts.values()) {
                 context.socket.end("Server shutting down.\n");
             }
+            this.history.close();
         };
         this.server.on("error", (err) => {
             console.error("Server error:", err.message);
+        });
+        this.server.on("close", () => {
+            this.history.close();
         });
         node_process_1.default.once("SIGINT", shutdown);
         node_process_1.default.once("SIGTERM", shutdown);
@@ -150,6 +158,9 @@ class ChatServer {
             case "/group":
                 this.handleGroupCommand(context, tokens, raw);
                 break;
+            case "/history":
+                this.handleHistoryCommand(context, tokens);
+                break;
             case "/quit":
                 this.sendLine(context.socket, "Disconnecting. Bye!");
                 context.socket.end();
@@ -203,6 +214,7 @@ class ChatServer {
             "  /group join <name>                Join an existing group",
             "  /group leave <name>               Leave a group you're part of",
             "  /group send <name> <message>      Send a message to a group you're in",
+            "  /history [count]                  View recent chat history (default 20, max 100)",
             "  /quit                             Disconnect from the server",
         ];
         this.sendLine(socket, helpLines.join("\n"));
@@ -236,6 +248,14 @@ class ChatServer {
         }
         this.sendLine(recipient.socket, `[PM] ${sender}: ${message}`);
         this.sendLine(origin, `[PM -> ${target}] ${message}`);
+        this.history.append({
+            type: "private",
+            timestamp: Date.now(),
+            sender,
+            target,
+            message,
+            audience: [sender, target],
+        });
     }
     groupCreate(sender, groupName, origin) {
         if (this.groups.has(groupName)) {
@@ -272,6 +292,7 @@ class ChatServer {
             this.sendLine(origin, "You must join the group before sending messages.");
             return;
         }
+        const audience = [...members];
         for (const member of members) {
             if (member === sender) {
                 continue;
@@ -282,11 +303,24 @@ class ChatServer {
             }
         }
         this.sendLine(origin, `[Group:${groupName}] (you): ${message}`);
+        this.history.append({
+            type: "group",
+            timestamp: Date.now(),
+            sender,
+            group: groupName,
+            message,
+            audience,
+        });
     }
     broadcastSystem(message) {
         for (const context of this.clients.values()) {
             this.sendLine(context.socket, `[System] ${message}`);
         }
+        this.history.append({
+            type: "system",
+            timestamp: Date.now(),
+            message,
+        });
     }
     cleanupClient(context) {
         if (context.closed) {
@@ -303,6 +337,64 @@ class ChatServer {
             }
             this.broadcastSystem(`${context.name} left the chat.`);
         }
+    }
+    handleHistoryCommand(context, tokens) {
+        if (!context.name) {
+            return;
+        }
+        let limit = 20;
+        if (tokens.length >= 2) {
+            const requested = Number(tokens[1]);
+            if (Number.isNaN(requested) || requested <= 0) {
+                this.sendLine(context.socket, "Usage: /history [positive count]");
+                return;
+            }
+            limit = Math.min(100, Math.floor(requested));
+        }
+        const entries = this.history.getRecent(limit, (entry) => this.historyEntryVisible(entry, context.name));
+        if (entries.length === 0) {
+            this.sendLine(context.socket, "No history available yet.");
+            return;
+        }
+        const lines = entries.map((entry) => this.formatHistoryEntry(entry, context.name));
+        this.sendLine(context.socket, lines.join("\n"));
+    }
+    historyEntryVisible(entry, requester) {
+        if (entry.type === "system") {
+            return true;
+        }
+        if (entry.audience) {
+            return entry.audience.includes(requester);
+        }
+        if (entry.type === "private") {
+            return entry.sender === requester || entry.target === requester;
+        }
+        if (entry.type === "group" && entry.group) {
+            return this.isGroupMember(requester, entry.group);
+        }
+        return false;
+    }
+    formatHistoryEntry(entry, requester) {
+        const timestamp = this.formatTimestamp(entry.timestamp);
+        switch (entry.type) {
+            case "private": {
+                const direction = entry.sender === requester ? `-> ${entry.target}` : `<- ${entry.sender}`;
+                return `[${timestamp}] [PM ${direction}] ${entry.message}`;
+            }
+            case "group":
+                return `[${timestamp}] [Group:${entry.group}] ${entry.sender ?? "unknown"}: ${entry.message}`;
+            case "system":
+            default:
+                return `[${timestamp}] [System] ${entry.message}`;
+        }
+    }
+    formatTimestamp(value) {
+        const iso = new Date(value).toISOString();
+        return iso.replace("T", " ").slice(0, 19);
+    }
+    isGroupMember(name, groupName) {
+        const members = this.groups.get(groupName);
+        return !!members && members.has(name);
     }
     sendLine(socket, message) {
         if (socket.writable) {

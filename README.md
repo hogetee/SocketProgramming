@@ -5,8 +5,9 @@ This repository bootstraps the term project requirements for a socket-based chat
 ### Features implemented now
 - Event-driven multi-client server built with Node's `net` module while sharing synchronized in-memory state.
 - Unique nickname enforcement before a client can interact with others.
-- `/list users`, `/list groups`, `/msg <user> ...`, `/group create|join|leave|send`, `/quit`, and `/help` commands.
+- `/list users`, `/list groups`, `/msg <user> ...`, `/group create|join|leave|send`, `/history [count]`, `/quit`, and `/help` commands.
 - Private direct messaging plus opt-in group messaging that only delivers to members of the group.
+- Server-side chat history persisted to `chat-history.jsonl`, retrievable via `/history` (default 20 entries, max 100) so late joiners can review recent context.
 
 ### Running the TypeScript server
 1. Install dependencies (Node.js 18+ recommended):
