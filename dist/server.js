@@ -10,6 +10,7 @@ const history_1 = require("./history");
 const DEFAULT_HOST = "0.0.0.0";
 const DEFAULT_PORT = 5050;
 const HISTORY_FILE = node_path_1.default.resolve(node_process_1.default.cwd(), "chat-history.jsonl");
+const MAX_PHOTO_BYTES = 3 * 1024 * 1024; // 3MB cap per photo
 class ChatServer {
     constructor(host, port) {
         this.clients = new Map();
@@ -161,6 +162,9 @@ class ChatServer {
             case "/history":
                 this.handleHistoryCommand(context, tokens);
                 break;
+            case "/photo":
+                this.handlePhotoCommand(context, tokens);
+                break;
             case "/quit":
                 this.sendLine(context.socket, "Disconnecting. Bye!");
                 context.socket.end();
@@ -215,6 +219,7 @@ class ChatServer {
             "  /group leave <name>               Leave a group you're part of",
             "  /group send <name> <message>      Send a message to a group you're in",
             "  /history [count]                  View recent chat history (default 20, max 100)",
+            "  /photo <@user|#group> <mime> <name> <base64> [caption]  Send an image (<= 3MB)",
             "  /quit                             Disconnect from the server",
         ];
         this.sendLine(socket, helpLines.join("\n"));
@@ -312,6 +317,143 @@ class ChatServer {
             audience,
         });
     }
+    handlePhotoCommand(context, tokens) {
+        if (!context.name) {
+            return;
+        }
+        if (tokens.length < 5) {
+            this.sendLine(context.socket, "Usage: /photo <@user|#group> <mime> <name> <base64_data> [caption]");
+            return;
+        }
+        const rawTarget = tokens[1];
+        if (!rawTarget.startsWith("@") && !rawTarget.startsWith("#")) {
+            this.sendLine(context.socket, "Target must start with @ (user) or # (group).");
+            return;
+        }
+        const mime = tokens[2];
+        const name = tokens[3];
+        const base64Data = tokens[4];
+        const caption = tokens.slice(5).join(" ").trim();
+        if (!mime.startsWith("image/")) {
+            this.sendLine(context.socket, "Only image mime types are supported (image/*).");
+            return;
+        }
+        if (!/^[A-Za-z0-9._-]+$/.test(name)) {
+            this.sendLine(context.socket, "Image name must only use letters, numbers, dot, dash, underscore.");
+            return;
+        }
+        let buffer;
+        try {
+            buffer = Buffer.from(base64Data, "base64");
+        }
+        catch {
+            this.sendLine(context.socket, "Invalid base64 payload.");
+            return;
+        }
+        if (buffer.length === 0) {
+            this.sendLine(context.socket, "Photo payload was empty.");
+            return;
+        }
+        if (buffer.length > MAX_PHOTO_BYTES) {
+            this.sendLine(context.socket, `Photo exceeds ${MAX_PHOTO_BYTES} bytes (3MB limit).`);
+            return;
+        }
+        const normalizedTarget = rawTarget.slice(1);
+        if (!normalizedTarget) {
+            this.sendLine(context.socket, "Provide a user or group name after @ / #.");
+            return;
+        }
+        if (rawTarget.startsWith("@")) {
+            this.sendPrivatePhoto(context.name, normalizedTarget, mime, name, base64Data, buffer.length, caption);
+        }
+        else {
+            this.groupSendPhoto(context.name, normalizedTarget, mime, name, base64Data, buffer.length, caption);
+        }
+    }
+    sendPrivatePhoto(sender, target, mime, name, data, size, caption) {
+        const recipient = this.clients.get(target);
+        const origin = this.clients.get(sender);
+        if (!recipient) {
+            origin?.socket && this.sendLine(origin.socket, `${target} is not online.`);
+            return;
+        }
+        const payload = this.buildPhotoPayload("private", sender, {
+            target,
+            mime,
+            name,
+            data,
+            caption,
+            size,
+        });
+        this.dispatchPhotoPayload(recipient.socket, payload);
+        if (origin) {
+            this.dispatchPhotoPayload(origin.socket, payload);
+        }
+        this.history.append({
+            type: "private",
+            timestamp: payload.timestamp,
+            sender,
+            target,
+            message: caption || "[photo]",
+            audience: [sender, target],
+            media: {
+                kind: "photo",
+                mime,
+                name,
+                data,
+                size,
+            },
+        });
+    }
+    groupSendPhoto(sender, groupName, mime, name, data, size, caption) {
+        const members = this.groups.get(groupName);
+        const origin = this.clients.get(sender);
+        if (!members || !members.has(sender)) {
+            origin?.socket &&
+                this.sendLine(origin.socket, "You must join the group before sending messages.");
+            return;
+        }
+        const payload = this.buildPhotoPayload("group", sender, {
+            group: groupName,
+            mime,
+            name,
+            data,
+            caption,
+            size,
+        });
+        for (const member of members) {
+            const context = this.clients.get(member);
+            if (context) {
+                this.dispatchPhotoPayload(context.socket, payload);
+            }
+        }
+        this.history.append({
+            type: "group",
+            timestamp: payload.timestamp,
+            sender,
+            group: groupName,
+            message: caption || "[photo]",
+            audience: [...members],
+            media: {
+                kind: "photo",
+                mime,
+                name,
+                data,
+                size,
+            },
+        });
+    }
+    buildPhotoPayload(kind, sender, options) {
+        return {
+            kind,
+            sender,
+            timestamp: Date.now(),
+            ...options,
+        };
+    }
+    dispatchPhotoPayload(socket, payload) {
+        this.sendLine(socket, `PHOTO ${JSON.stringify(payload)}`);
+    }
     broadcastSystem(message) {
         for (const context of this.clients.values()) {
             this.sendLine(context.socket, `[System] ${message}`);
@@ -375,6 +517,21 @@ class ChatServer {
         return false;
     }
     formatHistoryEntry(entry, requester) {
+        if (entry.media?.kind === "photo") {
+            const payload = {
+                kind: entry.group ? "group" : "private",
+                sender: entry.sender ?? "unknown",
+                target: entry.target,
+                group: entry.group,
+                mime: entry.media.mime,
+                name: entry.media.name ?? "photo",
+                data: entry.media.data,
+                caption: entry.message && entry.message !== "[photo]" ? entry.message : undefined,
+                size: entry.media.size,
+                timestamp: entry.timestamp,
+            };
+            return `PHOTO ${JSON.stringify(payload)}`;
+        }
         const timestamp = this.formatTimestamp(entry.timestamp);
         switch (entry.type) {
             case "private": {

@@ -3,6 +3,14 @@ import path from "node:path";
 
 export type HistoryEntryType = "system" | "private" | "group";
 
+export interface HistoryMedia {
+    kind: "photo";
+    mime: string;
+    data: string;
+    name?: string;
+    size: number;
+}
+
 export interface HistoryEntry {
     type: HistoryEntryType;
     timestamp: number;
@@ -11,6 +19,7 @@ export interface HistoryEntry {
     target?: string;
     group?: string;
     audience?: string[];
+    media?: HistoryMedia;
 }
 
 export class HistoryStore {

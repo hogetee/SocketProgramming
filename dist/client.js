@@ -3,11 +3,14 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+const node_fs_1 = __importDefault(require("node:fs"));
 const node_net_1 = __importDefault(require("node:net"));
+const node_path_1 = __importDefault(require("node:path"));
 const node_readline_1 = __importDefault(require("node:readline"));
 const node_process_1 = __importDefault(require("node:process"));
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 5050;
+const MEDIA_DIR = node_path_1.default.resolve(node_process_1.default.cwd(), "received-photos");
 class ChatClient {
     constructor(host, port, nickname) {
         this.host = host;
@@ -19,6 +22,8 @@ class ChatClient {
         this.historyLimit = 200;
         this.readyForRooms = false;
         this.roomInstructionsShown = false;
+        this.mediaDir = MEDIA_DIR;
+        this.mediaDirReady = false;
         this.socket = new node_net_1.default.Socket();
         this.rl = node_readline_1.default.createInterface({
             input: node_process_1.default.stdin,
@@ -112,6 +117,10 @@ class ChatClient {
     }
     routeServerLine(line) {
         if (!line.trim()) {
+            return;
+        }
+        if (line.startsWith("PHOTO ")) {
+            this.processPhotoLine(line.slice(6));
             return;
         }
         const privateIncoming = line.match(/^\[PM\]\s+([^:]+):\s*(.*)$/);
@@ -263,6 +272,102 @@ class ChatClient {
     appendSystemMessage(text) {
         const room = this.getSystemRoom();
         this.appendMessage(room, text);
+    }
+    processPhotoLine(raw) {
+        try {
+            const payload = JSON.parse(raw);
+            this.handlePhotoPayload(payload);
+        }
+        catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            this.appendSystemMessage(`[warn] Failed to parse incoming photo: ${message}`);
+        }
+    }
+    handlePhotoPayload(payload) {
+        if (!payload || !payload.mime || !payload.data) {
+            this.appendSystemMessage("[warn] Photo payload missing data.");
+            return;
+        }
+        const roomType = payload.kind === "group" ? "group" : "private";
+        let identifier;
+        if (roomType === "group") {
+            if (!payload.group) {
+                this.appendSystemMessage("[warn] Photo payload missing group name.");
+                return;
+            }
+            identifier = payload.group;
+        }
+        else if (payload.sender && payload.sender === this.userNickname) {
+            identifier = payload.target ?? payload.sender;
+        }
+        else {
+            identifier = payload.sender ?? payload.target;
+        }
+        if (!identifier) {
+            this.appendSystemMessage("[warn] Photo payload missing target.");
+            return;
+        }
+        const room = this.ensureRoom(roomType, identifier);
+        const caption = payload.caption ? ` ${payload.caption}` : "";
+        let summary;
+        if (roomType === "group") {
+            summary = `[photo:${payload.mime}] ${payload.sender ?? "unknown"} -> #${payload.group}${caption}`;
+        }
+        else if (payload.sender === this.userNickname) {
+            summary = `[photo:${payload.mime}] (you -> ${payload.target ?? "unknown"})${caption}`;
+        }
+        else {
+            summary = `[photo:${payload.mime}] ${payload.sender ?? "unknown"}${caption}`;
+        }
+        const savedPath = this.savePhotoToDisk(payload);
+        const info = savedPath ? `${summary} saved to ${savedPath}` : `${summary} (save failed)`;
+        this.appendMessage(room, info);
+    }
+    savePhotoToDisk(payload) {
+        try {
+            const buffer = Buffer.from(payload.data, "base64");
+            if (!buffer.length) {
+                return undefined;
+            }
+            this.ensureMediaDir();
+            const fileName = this.buildPhotoFileName(payload);
+            const filePath = node_path_1.default.join(this.mediaDir, fileName);
+            node_fs_1.default.writeFileSync(filePath, buffer);
+            return filePath;
+        }
+        catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            this.appendSystemMessage(`[warn] Failed to save photo: ${message}`);
+            return undefined;
+        }
+    }
+    ensureMediaDir() {
+        if (this.mediaDirReady) {
+            return;
+        }
+        node_fs_1.default.mkdirSync(this.mediaDir, { recursive: true });
+        this.mediaDirReady = true;
+    }
+    buildPhotoFileName(payload) {
+        const rawName = payload.name && /^[A-Za-z0-9._-]+$/.test(payload.name) ? payload.name : "photo";
+        const existingExt = node_path_1.default.extname(rawName);
+        const extension = existingExt || this.extensionFromMime(payload.mime);
+        const stemSource = existingExt ? rawName.slice(0, -existingExt.length) : rawName;
+        const safeStem = stemSource.replace(/[^A-Za-z0-9._-]+/g, "_") || "photo";
+        const stamp = payload.timestamp ? new Date(payload.timestamp).getTime() : Date.now();
+        return `${safeStem}_${stamp}${extension || ".img"}`;
+    }
+    extensionFromMime(mime) {
+        if (mime === "image/png") {
+            return ".png";
+        }
+        if (mime === "image/jpeg") {
+            return ".jpg";
+        }
+        if (mime === "image/gif") {
+            return ".gif";
+        }
+        return ".img";
     }
     appendMessage(room, text) {
         room.history.push(text);

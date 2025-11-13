@@ -5,9 +5,10 @@ const WS_URL =
   `${location.protocol === "https:" ? "wss" : "ws"}://${location.hostname}:3000/ws`;
 const HISTORY_LIMIT = 200;
 const SYSTEM_ROOM_ID = "!system";
+const MAX_PHOTO_BYTES = 3 * 1024 * 1024;
 
-function createMessage(text) {
-  return { text, timestamp: Date.now() };
+function createMessage(text, extras = {}) {
+  return { text, timestamp: Date.now(), ...extras };
 }
 
 function formatTimestamp(value) {
@@ -17,6 +18,24 @@ function formatTimestamp(value) {
     return "";
   }
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function formatBytes(bytes) {
+  if (!bytes || Number.isNaN(bytes)) {
+    return "0 B";
+  }
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function sanitizeFileName(value = "") {
+  const normalized = value.toLowerCase().replace(/[^a-z0-9._-]+/g, "_");
+  return normalized || "photo";
 }
 
 function roomDescriptor(type, identifierRaw = "") {
@@ -85,6 +104,9 @@ export default function App() {
   const [groupName, setGroupName] = useState("");
   const [roomHintShown, setRoomHintShown] = useState(false);
   const [reconnectKey, setReconnectKey] = useState(0);
+  const [photoAttachment, setPhotoAttachment] = useState(null);
+  const [photoCaption, setPhotoCaption] = useState("");
+  const [photoError, setPhotoError] = useState("");
 
   const wsRef = useRef(null);
   const bufferRef = useRef("");
@@ -92,6 +114,7 @@ export default function App() {
   const chatScrollRef = useRef(null);
   const groupAccumulatorRef = useRef(null);
   const groupTimerRef = useRef(null);
+  const photoInputRef = useRef(null);
 
   const roomsList = useMemo(() => Object.values(rooms).sort(sortRooms), [rooms]);
   const activeRoom = rooms[activeRoomId] || rooms[SYSTEM_ROOM_ID];
@@ -114,6 +137,7 @@ export default function App() {
       setReadyForChats(false);
       setNickname("");
       finalizeGroupAccumulator(true);
+      resetPhotoSelection();
     };
     const handleError = () => setConnectionStatus("error");
 
@@ -181,11 +205,11 @@ export default function App() {
     });
   }
 
-  function appendMessage(type, identifier, text) {
+  function appendMessage(type, identifier, text, extras = {}) {
     setRooms((prev) => {
       const descriptor = roomDescriptor(type, identifier);
       const existing = prev[descriptor.id] || createRoom(type, identifier);
-      const nextMessages = [...existing.messages, createMessage(text)].slice(-HISTORY_LIMIT);
+      const nextMessages = [...existing.messages, createMessage(text, extras)].slice(-HISTORY_LIMIT);
       const unread = descriptor.id === activeRoomId ? 0 : existing.unread + 1;
       return {
         ...prev,
@@ -238,6 +262,84 @@ export default function App() {
       sendRaw(`/group send ${room.target} ${text}`);
     }
     setChatInput("");
+  }
+
+  function handlePhotoFileChange(event) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      setPhotoAttachment(null);
+      setPhotoError("");
+      return;
+    }
+    if (file.size > MAX_PHOTO_BYTES) {
+      setPhotoAttachment(null);
+      setPhotoError("Photo must be 3MB or smaller.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result !== "string") {
+        setPhotoAttachment(null);
+        setPhotoError("Unable to read photo data.");
+        return;
+      }
+      const commaIndex = result.indexOf(",");
+      const base64 = commaIndex === -1 ? "" : result.slice(commaIndex + 1);
+      if (!base64) {
+        setPhotoAttachment(null);
+        setPhotoError("Unable to encode photo.");
+        return;
+      }
+      setPhotoAttachment({
+        name: sanitizeFileName(file.name),
+        mime: file.type || "image/png",
+        data: base64,
+        size: file.size,
+      });
+      setPhotoError("");
+    };
+    reader.onerror = () => {
+      setPhotoAttachment(null);
+      setPhotoError("Failed to read photo.");
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function resetPhotoSelection() {
+    setPhotoAttachment(null);
+    setPhotoCaption("");
+    setPhotoError("");
+    if (photoInputRef.current) {
+      photoInputRef.current.value = "";
+    }
+  }
+
+  function handleSendPhoto(e) {
+    e?.preventDefault();
+    if (!photoAttachment) {
+      setPhotoError("Select a photo first.");
+      return;
+    }
+    const room = rooms[activeRoomId];
+    if (!readyForChats || !room || room.type === "system" || !room.target) {
+      appendMessage(
+        "system",
+        "system",
+        "Open a private user (@nickname) or group (#group) room before sending a photo."
+      );
+      return;
+    }
+    const targetArg = room.type === "group" ? `#${room.target}` : `@${room.target}`;
+    const caption = photoCaption.trim();
+    const command = `/photo ${targetArg} ${photoAttachment.mime} ${photoAttachment.name} ${photoAttachment.data}${
+      caption ? ` ${caption}` : ""
+    }`;
+    if (!sendRaw(command)) {
+      setPhotoError("Connection not ready. Photo not sent.");
+      return;
+    }
+    resetPhotoSelection();
   }
 
   function handleDirectOpen(e) {
@@ -362,8 +464,65 @@ export default function App() {
     }
   }
 
+  function handlePhotoEvent(payload) {
+    if (!payload || typeof payload !== "object") {
+      appendMessage("system", "system", "[warn] Received malformed photo payload.");
+      return;
+    }
+    if (!payload.mime || !payload.data) {
+      appendMessage("system", "system", "[warn] Photo payload missing mime or data.");
+      return;
+    }
+    const roomType = payload.kind === "group" ? "group" : "private";
+    let identifier;
+    if (roomType === "group") {
+      identifier = payload.group;
+    } else if (payload.sender === nickname) {
+      identifier = payload.target || payload.sender;
+    } else {
+      identifier = payload.sender || payload.target;
+    }
+    if (!identifier) {
+      appendMessage("system", "system", "[warn] Photo payload missing target.");
+      return;
+    }
+    const captionText = payload.caption?.trim();
+    let lineText;
+    if (roomType === "group") {
+      lineText = `${payload.sender}: ${captionText || "sent a photo."}`;
+    } else if (payload.sender === nickname && payload.target) {
+      lineText = `(you -> ${payload.target}) ${captionText || "sent a photo."}`;
+    } else if (payload.sender === nickname) {
+      lineText = `(you) ${captionText || "sent a photo."}`;
+    } else {
+      lineText = `${payload.sender}: ${captionText || "sent a photo."}`;
+    }
+    appendMessage(roomType, identifier, lineText, {
+      media: {
+        kind: "photo",
+        mime: payload.mime,
+        name: payload.name || "photo",
+        data: payload.data,
+        size: payload.size || 0,
+      },
+      sender: payload.sender,
+      caption: captionText,
+      timestamp: payload.timestamp || Date.now(),
+      photo: true,
+    });
+  }
+
   function routeServerLine(line) {
     if (!line.trim()) {
+      return;
+    }
+    if (line.startsWith("PHOTO ")) {
+      try {
+        const payload = JSON.parse(line.slice(6));
+        handlePhotoEvent(payload);
+      } catch {
+        appendMessage("system", "system", "[warn] Failed to parse incoming photo.");
+      }
       return;
     }
     handleUserMetadata(line);
@@ -440,6 +599,7 @@ export default function App() {
     setRoomHintShown(false);
     groupAccumulatorRef.current = null;
     bufferRef.current = "";
+    resetPhotoSelection();
     setReconnectKey((key) => key + 1);
   }
 
@@ -612,10 +772,29 @@ export default function App() {
             {(activeRoom?.messages ?? []).map((entry, idx) => {
               const message = typeof entry === "string" ? { text: entry } : entry;
               const label = formatTimestamp(message.timestamp);
+              const isPhoto = message.media?.kind === "photo";
               return (
-                <div key={`${activeRoom?.id}-${idx}`} className="line">
+                <div
+                  key={`${activeRoom?.id}-${idx}`}
+                  className={`line${isPhoto ? " photo-line" : ""}`}
+                >
                   {label && <span className="timestamp">{label}</span>}
-                  <span className="message-text">{message.text}</span>
+                  <div className="message-text">
+                    <div>{message.text}</div>
+                    {isPhoto && (
+                      <div className="photo-bubble">
+                        <img
+                          src={`data:${message.media.mime};base64,${message.media.data}`}
+                          alt={message.media.name || "photo"}
+                        />
+                        <div className="muted small">
+                          {`${message.media.name || "image"} · ${formatBytes(
+                            message.media.size || 0
+                          )}`}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               );
             })}
@@ -633,6 +812,42 @@ export default function App() {
             />
             <button type="submit">Send</button>
           </form>
+          <div className="photo-tools">
+            <input
+              type="file"
+              accept="image/*"
+              ref={photoInputRef}
+              onChange={handlePhotoFileChange}
+            />
+            <input
+              className="photo-caption"
+              value={photoCaption}
+              onChange={(e) => setPhotoCaption(e.target.value)}
+              placeholder="Photo caption (optional)"
+            />
+            <button
+              type="button"
+              onClick={handleSendPhoto}
+              disabled={!photoAttachment || !readyForChats}
+            >
+              Send Photo
+            </button>
+            {photoAttachment && (
+              <button type="button" className="pill-btn ghost" onClick={resetPhotoSelection}>
+                Clear
+              </button>
+            )}
+          </div>
+          {photoAttachment && (
+            <p className="muted small">
+              Ready: {photoAttachment.name} · {formatBytes(photoAttachment.size)}
+            </p>
+          )}
+          {photoError && (
+            <p className="error small" role="alert">
+              {photoError}
+            </p>
+          )}
           <p className="muted small">
             Prefix with / to send raw commands (e.g. /help, /list users). Plain text targets the active room.
           </p>
