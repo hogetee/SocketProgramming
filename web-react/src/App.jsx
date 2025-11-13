@@ -6,6 +6,19 @@ const WS_URL =
 const HISTORY_LIMIT = 200;
 const SYSTEM_ROOM_ID = "!system";
 
+function createMessage(text) {
+  return { text, timestamp: Date.now() };
+}
+
+function formatTimestamp(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
 function roomDescriptor(type, identifierRaw = "") {
   const identifier = identifierRaw.trim();
   if (type === "system") {
@@ -25,15 +38,15 @@ function roomDescriptor(type, identifierRaw = "") {
 function seedMessages(type, label, target) {
   if (type === "system") {
     return [
-      "[info] System room active. Server prompts will appear here.",
-      "Enter your nickname when prompted. Use /chat @nickname or /chat #group after joining.",
+      createMessage("[info] System room active. Server prompts will appear here."),
+      createMessage("Enter your nickname when prompted. Use /chat @nickname or /chat #group after joining."),
     ];
   }
   if (type === "private" && target) {
-    return [`[info] Private chat with ${target}. Type to send direct messages.`];
+    return [createMessage(`[info] Private chat with ${target}. Type to send direct messages.`)];
   }
   if (type === "group" && target) {
-    return [`[info] Group chat ${label}. Members will see anything you send here.`];
+    return [createMessage(`[info] Group chat ${label}. Members will see anything you send here.`)];
   }
   return [];
 }
@@ -172,7 +185,7 @@ export default function App() {
     setRooms((prev) => {
       const descriptor = roomDescriptor(type, identifier);
       const existing = prev[descriptor.id] || createRoom(type, identifier);
-      const nextMessages = [...existing.messages, text].slice(-HISTORY_LIMIT);
+      const nextMessages = [...existing.messages, createMessage(text)].slice(-HISTORY_LIMIT);
       const unread = descriptor.id === activeRoomId ? 0 : existing.unread + 1;
       return {
         ...prev,
@@ -596,11 +609,16 @@ export default function App() {
             </div>
           </div>
           <div className="messages" ref={chatScrollRef}>
-            {(activeRoom?.messages ?? []).map((text, idx) => (
-              <div key={`${activeRoom?.id}-${idx}`} className="line">
-                {text}
-              </div>
-            ))}
+            {(activeRoom?.messages ?? []).map((entry, idx) => {
+              const message = typeof entry === "string" ? { text: entry } : entry;
+              const label = formatTimestamp(message.timestamp);
+              return (
+                <div key={`${activeRoom?.id}-${idx}`} className="line">
+                  {label && <span className="timestamp">{label}</span>}
+                  <span className="message-text">{message.text}</span>
+                </div>
+              );
+            })}
           </div>
           <form className="controls" onSubmit={handleSendMessage}>
             <input
