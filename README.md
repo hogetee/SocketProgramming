@@ -1,9 +1,9 @@
 ## Simple Socket Chat Project
 
-This repository bootstraps the term project requirements for a socket-based chat system. It now ships with both a Python reference implementation and a TypeScript/Node.js server that speak plain TCP sockets and can interoperate with the provided Python client.
+This repository bootstraps the term project requirements for a socket-based chat system using a full TypeScript/Node.js stack (server + CLI client) that communicates over plain TCP sockets.
 
 ### Features implemented now
-- Multi-client server that keeps every connection in its own thread while sharing a synchronized in-memory state.
+- Event-driven multi-client server built with Node's `net` module while sharing synchronized in-memory state.
 - Unique nickname enforcement before a client can interact with others.
 - `/list users`, `/list groups`, `/msg <user> ...`, `/group create|join|leave|send`, `/quit`, and `/help` commands.
 - Private direct messaging plus opt-in group messaging that only delivers to members of the group.
@@ -19,11 +19,6 @@ This repository bootstraps the term project requirements for a socket-based chat
    # or
    npm start                # compiles to dist/ then runs with node
    ```
-3. Connect using the included Python client or any TCP client:
-   ```bash
-   python src/client.py --host 127.0.0.1 --port 5050
-   ```
-
 ### Running the TypeScript client
 1. With the server already running, start the client CLI:
    ```bash
@@ -37,19 +32,6 @@ This repository bootstraps the term project requirements for a socket-based chat
    ```
 3. Supply `--host` / `--port` if you need to connect to a remote machine.
 
-### Python reference server (optional)
-If you still need the original Python version:
-1. Create a virtual environment (optional but recommended):
-   ```bash
-   python3 -m venv .venv
-   source .venv/bin/activate
-   ```
-2. Start the Python server:
-   ```bash
-   python src/server.py
-   ```
-3. Launch clients the same way as above (you can still use `python src/client.py` if desired).
-
 ### Using the client
 - Enter a nickname when prompted. It must be unique across all active clients.
 - Use `/help` anytime to see the supported commands.
@@ -60,10 +42,10 @@ If you still need the original Python version:
 - Send to a group you joined: `/group send lab Are we meeting at 9?`
 - Leave a group: `/group leave lab`
 
-The client keeps two panes in the terminal: all server messages plus a prompt for the next command, so you can see incoming chats while typing.
+The CLI client redraws the prompt automatically so you can keep typing commands while new messages stream in.
 
 ### Next steps / ideas
 - Persist chat history to disk or a database instead of keeping it in-memory.
-- Replace the terminal client with a GUI (e.g., Tkinter, PyQt) or a web UI (WebSockets) for the "chat box" requirement.
+- Replace the terminal client with a GUI or web UI (for example, build a WebSocket bridge and React/Next.js front-end) for the "chat box" requirement.
 - Add authentication, TLS, and command throttling for production-like deployments.
 - Containerize the server for easier deployment/testing.
