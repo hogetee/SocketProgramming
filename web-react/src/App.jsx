@@ -6,6 +6,8 @@ const WS_URL =
 const HISTORY_LIMIT = 200;
 const SYSTEM_ROOM_ID = "!system";
 const MAX_PHOTO_BYTES = 3 * 1024 * 1024;
+const ENTRY_ART =
+  "data:image/svg+xml,%3Csvg width='360' height='200' viewBox='0 0 360 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cdefs%3E%3ClinearGradient id='grad' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%23336CB5'/%3E%3Cstop offset='100%25' stop-color='%23F58C48'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='360' height='200' rx='32' fill='%23F6FBFF'/%3E%3Ccircle cx='80' cy='70' r='60' fill='%23DCEAFF'/%3E%3Ccircle cx='280' cy='60' r='70' fill='%23FFE2CB'/%3E%3Cpath d='M0 120C60 160 140 80 210 110C290 145 320 100 360 120V200H0V120Z' fill='url(%23grad)' opacity='0.85'/%3E%3Ccircle cx='120' cy='80' r='22' fill='%23FFFFFF' opacity='0.8'/%3E%3Ccircle cx='250' cy='90' r='16' fill='%23FFFFFF' opacity='0.8'/%3E%3Ccircle cx='210' cy='65' r='10' fill='%23FFFFFF' opacity='0.7'/%3E%3C/svg%3E";
 
 function createMessage(text, extras = {}) {
   return { text, timestamp: Date.now(), ...extras };
@@ -692,8 +694,12 @@ export default function App() {
     return (
       <div className="entry-screen">
         <div className="entry-card">
+          <div className="entry-hero">
+            <img src={ENTRY_ART} alt="Colorful chat illustration" />
+            <span className="entry-hero__badge">Seabreeze</span>
+          </div>
           <h2>Create Avatar</h2>
-          <p className="muted small">Pick a nickname to join the chat (avatars coming soon).</p>
+          <p className="muted small">Pick a nickname to join the chat.</p>
           <div className="entry-status">
             <span>Status: {connectionStatus}</span>
             {(connectionStatus === "closed" || connectionStatus === "error") && (
@@ -701,13 +707,6 @@ export default function App() {
                 Reconnect
               </button>
             )}
-          </div>
-          <div className="avatar-row">
-            {["🐻", "🐼", "🦊", "🐥"].map((emoji) => (
-              <span key={emoji} className="avatar-pill" aria-hidden="true">
-                {emoji}
-              </span>
-            ))}
           </div>
           <form className="entry-form" onSubmit={handleNickSubmit}>
             <label htmlFor="avatar-name">Avatar Name</label>
