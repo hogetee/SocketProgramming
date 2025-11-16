@@ -18,22 +18,20 @@ This repository bootstraps the term project requirements for a socket-based chat
    ```
 2. Start the server (defaults to `0.0.0.0:5050`):
    ```bash
-   npm run dev              # ts-node for quick runs
-   # or
-   npm start                # compiles to dist/ then runs with node
+   npm start                # ts-node src/server.ts
+   # เพิ่ม --host/--port หากต้องการ
    ```
 ### Running the TypeScript client
-1. With the server already running, start the client CLI:
+1. With the server already running, start the CLI client:
    ```bash
-   npm run client:dev          # ts-node interactive client
-   # or
-   npm run client:start        # uses the compiled dist/client.js
+   npm run client:dev          # เทียบเท่า ts-node src/client.ts
+   # หรือ
+   npm run client:start        # สคริปต์เดียวกัน เผื่ออยากจำง่าย
    ```
-2. Optionally pre-fill a nickname:
+2. ใส่ชื่อเล่นล่วงหน้าหรือแก้ host/port ได้ผ่านอาร์กิวเมนต์:
    ```bash
-   npm run client:dev -- --name alice
+    npm run client:dev -- --name alice --host 192.168.1.10 --port 5050
    ```
-3. Supply `--host` / `--port` if you need to connect to a remote machine.
 
 ### Using the client
 - Enter a nickname when prompted. It must be unique across all active clients.

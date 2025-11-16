@@ -34,3 +34,6 @@
 {"type":"group","timestamp":1763196455497,"sender":"nig","group":"asd","message":"kl","audience":["nig"],"id":34}
 {"type":"group","timestamp":1763196456321,"sender":"nig","group":"asd","message":"kl","audience":["nig"],"id":35}
 {"type":"system","timestamp":1763196463507,"message":"nig left the chat.","id":36}
+{"type":"system","timestamp":1763198782865,"message":"nheeger joined the chat.","id":37}
+{"type":"system","timestamp":1763198831243,"message":"nheeger left the chat.","id":38}
+{"type":"system","timestamp":1763277653632,"message":"sdsdsd joined the chat.","id":39}
