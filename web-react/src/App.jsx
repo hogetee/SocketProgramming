@@ -8,6 +8,29 @@ const SYSTEM_ROOM_ID = "!system";
 const MAX_PHOTO_BYTES = 3 * 1024 * 1024;
 const ENTRY_ART =
   "data:image/svg+xml,%3Csvg width='360' height='200' viewBox='0 0 360 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cdefs%3E%3ClinearGradient id='grad' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%23336CB5'/%3E%3Cstop offset='100%25' stop-color='%23F58C48'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='360' height='200' rx='32' fill='%23F6FBFF'/%3E%3Ccircle cx='80' cy='70' r='60' fill='%23DCEAFF'/%3E%3Ccircle cx='280' cy='60' r='70' fill='%23FFE2CB'/%3E%3Cpath d='M0 120C60 160 140 80 210 110C290 145 320 100 360 120V200H0V120Z' fill='url(%23grad)' opacity='0.85'/%3E%3Ccircle cx='120' cy='80' r='22' fill='%23FFFFFF' opacity='0.8'/%3E%3Ccircle cx='250' cy='90' r='16' fill='%23FFFFFF' opacity='0.8'/%3E%3Ccircle cx='210' cy='65' r='10' fill='%23FFFFFF' opacity='0.7'/%3E%3C/svg%3E";
+const HERO_ART =
+  "data:image/svg+xml,%3Csvg%20width%3D%22420%22%20height%3D%22220%22%20viewBox%3D%220%200%20420%20220%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%0A%20%20%3Cdefs%3E%0A%20%20%20%20%3ClinearGradient%20id%3D%22bg%22%20x1%3D%220%22%20y1%3D%220%22%20x2%3D%221%22%20y2%3D%221%22%3E%0A%20%20%20%20%20%20%3Cstop%20offset%3D%220%25%22%20stop-color%3D%22%23f7f9ff%22%2F%3E%0A%20%20%20%20%20%20%3Cstop%20offset%3D%22100%25%22%20stop-color%3D%22%23ffe4d0%22%2F%3E%0A%20%20%20%20%3C%2FlinearGradient%3E%0A%20%20%20%20%3ClinearGradient%20id%3D%22wave%22%20x1%3D%220%22%20y1%3D%220%22%20x2%3D%221%22%20y2%3D%220%22%3E%0A%20%20%20%20%20%20%3Cstop%20offset%3D%220%25%22%20stop-color%3D%22%237f8dff%22%2F%3E%0A%20%20%20%20%20%20%3Cstop%20offset%3D%22100%25%22%20stop-color%3D%22%23ffa5d2%22%2F%3E%0A%20%20%20%20%3C%2FlinearGradient%3E%0A%20%20%3C%2Fdefs%3E%0A%20%20%3Crect%20width%3D%22420%22%20height%3D%22220%22%20rx%3D%2236%22%20fill%3D%22url(%23bg)%22%2F%3E%0A%20%20%3Ccircle%20cx%3D%2280%22%20cy%3D%2270%22%20r%3D%2252%22%20fill%3D%22%23dce6ff%22%2F%3E%0A%20%20%3Ccircle%20cx%3D%22340%22%20cy%3D%2280%22%20r%3D%2258%22%20fill%3D%22%23ffe0e3%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M0%20150C90%20120%20130%20220%20210%20180C310%20130%20350%20210%20420%20160V220H0Z%22%20fill%3D%22url(%23wave)%22%2F%3E%0A%20%20%3Cg%3E%0A%20%20%20%20%3Ccircle%20cx%3D%22150%22%20cy%3D%22120%22%20r%3D%2240%22%20fill%3D%22%23fff%22%2F%3E%0A%20%20%20%20%3Ccircle%20cx%3D%22140%22%20cy%3D%22110%22%20r%3D%226%22%20fill%3D%22%2348587c%22%2F%3E%0A%20%20%20%20%3Ccircle%20cx%3D%22170%22%20cy%3D%22110%22%20r%3D%226%22%20fill%3D%22%2348587c%22%2F%3E%0A%20%20%20%20%3Cpath%20d%3D%22M135%20135C150%20150%20165%20150%20180%20135%22%20stroke%3D%22%2348587c%22%20stroke-width%3D%224%22%20stroke-linecap%3D%22round%22%20fill%3D%22none%22%2F%3E%0A%20%20%3C%2Fg%3E%0A%20%20%3Cg%3E%0A%20%20%20%20%3Ccircle%20cx%3D%22280%22%20cy%3D%22110%22%20r%3D%2234%22%20fill%3D%22%23fff%22%2F%3E%0A%20%20%20%20%3Ccircle%20cx%3D%22270%22%20cy%3D%22100%22%20r%3D%225%22%20fill%3D%22%2348587c%22%2F%3E%0A%20%20%20%20%3Ccircle%20cx%3D%22295%22%20cy%3D%22102%22%20r%3D%225%22%20fill%3D%22%2348587c%22%2F%3E%0A%20%20%20%20%3Cpath%20d%3D%22M265%20130C275%20140%20295%20140%20305%20130%22%20stroke%3D%22%2348587c%22%20stroke-width%3D%224%22%20stroke-linecap%3D%22round%22%20fill%3D%22none%22%2F%3E%0A%20%20%3C%2Fg%3E%0A%20%20%3Ccircle%20cx%3D%22140%22%20cy%3D%2265%22%20r%3D%2214%22%20fill%3D%22%23fdd7ad%22%2F%3E%0A%20%20%3Ccircle%20cx%3D%22180%22%20cy%3D%2260%22%20r%3D%2210%22%20fill%3D%22%23fdd7ad%22%2F%3E%0A%20%20%3Ccircle%20cx%3D%22300%22%20cy%3D%2260%22%20r%3D%2214%22%20fill%3D%22%23ffd1f0%22%2F%3E%0A%20%20%3Ccircle%20cx%3D%22320%22%20cy%3D%2250%22%20r%3D%2210%22%20fill%3D%22%23ffd1f0%22%2F%3E%0A%3C%2Fsvg%3E";
+const ENTRY_SIDEKICK_LEFT =
+  "data:image/svg+xml,%3Csvg%20width%3D%22220%22%20height%3D%22220%22%20viewBox%3D%220%200%20220%20220%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%0A%20%20%3Crect%20width%3D%22220%22%20height%3D%22220%22%20fill%3D%22none%22%2F%3E%0A%20%20%3Ccircle%20cx%3D%2295%22%20cy%3D%2270%22%20r%3D%2248%22%20fill%3D%22%23ffe5ba%22%20stroke%3D%22%23f5b45b%22%20stroke-width%3D%224%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M55%20150C55%20120%2070%20110%2095%20110C120%20110%20135%20120%20135%20150V200H55Z%22%20fill%3D%22%237f8dff%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M135%20200V145C135%20120%20150%20110%20165%20120C180%20130%20190%20160%20182%20188L176%20209Z%22%20fill%3D%22%23d0e0ff%22%2F%3E%0A%20%20%3Ccircle%20cx%3D%2278%22%20cy%3D%2270%22%20r%3D%228%22%20fill%3D%22%234c4c60%22%2F%3E%0A%20%20%3Ccircle%20cx%3D%22112%22%20cy%3D%2270%22%20r%3D%228%22%20fill%3D%22%234c4c60%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M80%2088C86%2096%20104%2096%20110%2088%22%20stroke%3D%22%234c4c60%22%20stroke-width%3D%225%22%20stroke-linecap%3D%22round%22%20fill%3D%22none%22%2F%3E%0A%20%20%3Ccircle%20cx%3D%22150%22%20cy%3D%2255%22%20r%3D%2216%22%20fill%3D%22%23ffd1dc%22%2F%3E%0A%20%20%3Ccircle%20cx%3D%22170%22%20cy%3D%2250%22%20r%3D%229%22%20fill%3D%22%23ffd1dc%22%20opacity%3D%220.8%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M42%20120C55%20105%2065%20105%2080%20120%22%20stroke%3D%22%23ffc4c4%22%20stroke-width%3D%228%22%20stroke-linecap%3D%22round%22%20opacity%3D%220.7%22%2F%3E%0A%3C%2Fsvg%3E";
+const ENTRY_SIDEKICK_RIGHT =
+  "data:image/svg+xml,%3Csvg%20width%3D%22240%22%20height%3D%22220%22%20viewBox%3D%220%200%20240%20220%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%0A%20%20%3Crect%20width%3D%22240%22%20height%3D%22220%22%20fill%3D%22none%22%2F%3E%0A%20%20%3Ccircle%20cx%3D%22150%22%20cy%3D%2275%22%20r%3D%2250%22%20fill%3D%22%23ffe0ef%22%20stroke%3D%22%23ff8fb7%22%20stroke-width%3D%224%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M100%20210V150C100%20120%20120%20108%20150%20108C180%20108%20200%20120%20200%20150V210Z%22%20fill%3D%22%23ffa46b%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M70%20200C65%20170%2080%20150%20105%20148%22%20stroke%3D%22%23ffd7c7%22%20stroke-width%3D%2218%22%20stroke-linecap%3D%22round%22%20opacity%3D%220.6%22%2F%3E%0A%20%20%3Ccircle%20cx%3D%22135%22%20cy%3D%2275%22%20r%3D%228%22%20fill%3D%22%234c4c60%22%2F%3E%0A%20%20%3Ccircle%20cx%3D%22165%22%20cy%3D%2275%22%20r%3D%228%22%20fill%3D%22%234c4c60%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M135%2095C142%20102%20158%20102%20165%2095%22%20stroke%3D%22%234c4c60%22%20stroke-width%3D%225%22%20stroke-linecap%3D%22round%22%20fill%3D%22none%22%2F%3E%0A%20%20%3Ccircle%20cx%3D%2290%22%20cy%3D%2245%22%20r%3D%2214%22%20fill%3D%22%23d0e0ff%22%2F%3E%0A%20%20%3Ccircle%20cx%3D%2270%22%20cy%3D%2252%22%20r%3D%229%22%20fill%3D%22%23d0e0ff%22%20opacity%3D%220.8%22%2F%3E%0A%20%20%3Ccircle%20cx%3D%22210%22%20cy%3D%2250%22%20r%3D%2213%22%20fill%3D%22%23ffe5ba%22%2F%3E%0A%3C%2Fsvg%3E";
+const FEATURE_CARDS = [
+  {
+    title: "Edge-to-edge flow",
+    detail: "Focus any room in a single click. Angled panels keep everything feeling dynamic.",
+    accent: "⚡",
+  },
+  {
+    title: "Cartoon mascots",
+    detail: "Friendly guides float around the lobby to welcome every new avatar.",
+    accent: "🎨",
+  },
+  {
+    title: "Photo drops",
+    detail: "Share crisp images with inline previews. We'll keep your gallery tidy.",
+    accent: "📸",
+  },
+];
 
 function createMessage(text, extras = {}) {
   return { text, timestamp: Date.now(), ...extras };
@@ -693,6 +716,16 @@ export default function App() {
   if (!readyForChats) {
     return (
       <div className="entry-screen">
+        <div className="entry-edge-strip entry-edge-strip--top" aria-hidden="true" />
+        <div className="entry-edge-strip entry-edge-strip--bottom" aria-hidden="true" />
+        <div className="entry-sidekick entry-sidekick--left">
+          <img src={ENTRY_SIDEKICK_LEFT} alt="Cartoon buddy with headphones" />
+          <span className="entry-sidekick__bubble">Ready to vibe?</span>
+        </div>
+        <div className="entry-sidekick entry-sidekick--right">
+          <img src={ENTRY_SIDEKICK_RIGHT} alt="Cartoon buddy waving hello" />
+          <span className="entry-sidekick__bubble">Hop in!</span>
+        </div>
         <div className="entry-card">
           <div className="entry-hero">
             <img src={ENTRY_ART} alt="Colorful chat illustration" />
@@ -739,6 +772,41 @@ export default function App() {
         </div>
         <div>{nickname ? `Connected as ${nickname}` : "Choose a nickname to join the chat."}</div>
       </header>
+      <section className="hero-banner">
+        <div className="hero-copy">
+          <p className="eyebrow">Seabreeze chat studio</p>
+          <h1>Colorful vibes, easy rooms</h1>
+          <p>
+            Hang out with friends, swap photos, and hop across rooms without friction. Everything updates live
+            while the mascots cheer you on.
+          </p>
+          <div className="hero-pills">
+            <span className="hero-pill">Live rooms</span>
+            <span className="hero-pill">Photo drops</span>
+            <span className="hero-pill">Slash commands</span>
+          </div>
+        </div>
+        <div className="hero-art">
+          <img src={HERO_ART} alt="Cartoon friends waving inside the chat bubble" />
+          <span className="hero-art__bubble">Wave hello!</span>
+        </div>
+      </section>
+      <section className="feature-edge">
+        <div className="feature-edge__beam" aria-hidden="true" />
+        <div className="feature-edge__grid">
+          {FEATURE_CARDS.map((card) => (
+            <article key={card.title} className="feature-chip">
+              <span className="feature-chip__accent" aria-hidden="true">
+                {card.accent}
+              </span>
+              <div>
+                <h4>{card.title}</h4>
+                <p>{card.detail}</p>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
       <div className="layout">
         <aside className="sidebar">
           <section className="panel">
